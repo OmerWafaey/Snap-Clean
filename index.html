@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Snap Clean — Blur. Redact. Share with confidence.</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1 class="wordmark">Snap<span class="accent">Clean</span></h1>
+      <p class="tagline">Blur. Redact. Share with confidence.</p>
+    </header>
+
+    <main class="app">
+      <section class="toolbar" aria-label="Tools">
+        <label class="btn">
+          Open image
+          <input id="file-input" type="file" accept="image/*" hidden />
+        </label>
+
+        <fieldset class="modes" aria-label="Redaction mode">
+          <label>
+            <input type="radio" name="mode" value="solid" checked /> Solid
+            <input id="solid-color" type="color" value="#000000" aria-label="Solid redaction color" />
+          </label>
+          <label><input type="radio" name="mode" value="pixelate" /> Blur</label>
+        </fieldset>
+
+        <button id="undo" class="btn" type="button" disabled>Undo</button>
+        <button id="export" class="btn btn-primary" type="button" disabled>Export PNG</button>
+      </section>
+
+      <p id="hint" class="hint">Open an image, then drag across anything you want to hide.</p>
+
+      <div class="stage">
+        <canvas id="canvas" width="0" height="0"></canvas>
+      </div>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
