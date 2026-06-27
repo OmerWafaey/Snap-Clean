@@ -1,8 +1,7 @@
-import { redactRegion, shapeCoverage, type RedactionMode, type Region, type Shape } from "../core/redact";
+import { redactRegion, shapeCoverage, type Region } from "../core/redact";
 import { normalizeRect, type Point } from "./geometry";
 import { maskEdges, type Edge } from "./outline";
-import { hexToRgba } from "./color";
-import { blurBlockSize } from "./blur";
+import { captureSettings, type ControlValues, type DragSettings } from "./settings";
 
 interface Elements {
   canvas: HTMLCanvasElement;
@@ -27,6 +26,9 @@ export class RedactEditor {
   private readonly history: ImageData[] = [];
   private dragStart: Point | null = null;
   private previewRegion: Region | null = null;
+  // Mode + shape are locked in when the drag begins, so changing a control
+  // mid-drag never alters what the in-progress selection will redact.
+  private dragSettings: DragSettings | null = null;
 
   constructor(private readonly el: Elements) {
     const ctx = el.canvas.getContext("2d");
@@ -65,15 +67,16 @@ export class RedactEditor {
     if (!this.committed) return;
     this.dragStart = this.toImageCoords(event);
     this.previewRegion = null;
+    this.dragSettings = captureSettings(this.controlValues());
     this.el.canvas.setPointerCapture(event.pointerId);
   }
 
   private onPointerMove(event: PointerEvent): void {
-    if (!this.dragStart || !this.committed) return;
+    if (!this.dragStart || !this.committed || !this.dragSettings) return;
     this.previewRegion = this.regionFrom(this.dragStart, event);
     // Outline the exact pixels that will be redacted on release — see before fill.
     this.ctx.putImageData(this.committed, 0, 0);
-    const covers = shapeCoverage(this.currentShape(), this.previewRegion);
+    const covers = shapeCoverage(this.dragSettings.shape, this.previewRegion);
     this.drawOutline(maskEdges(this.previewRegion, covers));
   }
 
@@ -114,7 +117,9 @@ export class RedactEditor {
    * outline promised are exactly the pixels this hides.
    */
   private redactedImage(source: ImageData, region: Region): ImageData {
-    const result = redactRegion(source, region, this.currentMode(), this.currentShape());
+    const settings = this.dragSettings;
+    if (!settings) throw new Error("No drag settings captured for this redaction");
+    const result = redactRegion(source, region, settings.mode, settings.shape);
     const image = this.ctx.createImageData(result.width, result.height);
     image.data.set(result.data);
     return image;
@@ -158,15 +163,14 @@ export class RedactEditor {
     return Array.from(inputs).find((input) => input.checked)?.value;
   }
 
-  private currentMode(): RedactionMode {
-    // Strength feeds the blur block size only; solid stays fully opaque.
-    return this.selectedValue(this.el.modeInputs) === "pixelate"
-      ? { type: "pixelate", blockSize: blurBlockSize(Number(this.el.blurStrength.value)) }
-      : { type: "solid", color: hexToRgba(this.el.solidColor.value) };
-  }
-
-  private currentShape(): Shape {
-    return this.selectedValue(this.el.shapeInputs) === "ellipse" ? "ellipse" : "rectangle";
+  /** Read the current control selections off the DOM — called once, at pointerdown. */
+  private controlValues(): ControlValues {
+    return {
+      mode: this.selectedValue(this.el.modeInputs) ?? "",
+      shape: this.selectedValue(this.el.shapeInputs) ?? "",
+      color: this.el.solidColor.value,
+      strength: Number(this.el.blurStrength.value),
+    };
   }
 
   private toImageCoords(event: PointerEvent): Point {
