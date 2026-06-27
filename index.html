@@ -25,6 +25,10 @@
             <input id="solid-color" type="color" value="#000000" aria-label="Solid redaction color" />
           </label>
           <label><input type="radio" name="mode" value="pixelate" /> Blur</label>
+          <label class="strength">
+            Blur strength
+            <input id="blur-strength" type="range" min="0" max="100" value="50" aria-label="Blur strength" />
+          </label>
         </fieldset>
 
         <button id="undo" class="btn" type="button" disabled>Undo</button>

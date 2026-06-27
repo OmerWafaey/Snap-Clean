@@ -11,6 +11,7 @@ new RedactEditor({
   fileInput: requireElement<HTMLInputElement>("file-input"),
   modeInputs: document.querySelectorAll<HTMLInputElement>('input[name="mode"]'),
   solidColor: requireElement<HTMLInputElement>("solid-color"),
+  blurStrength: requireElement<HTMLInputElement>("blur-strength"),
   undo: requireElement<HTMLButtonElement>("undo"),
   export: requireElement<HTMLButtonElement>("export"),
   hint: requireElement<HTMLElement>("hint"),

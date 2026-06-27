@@ -111,6 +111,18 @@ body {
   cursor: pointer;
 }
 
+.modes .strength {
+  gap: 8px;
+  color: var(--grey);
+  font-size: 0.9rem;
+}
+
+#blur-strength {
+  width: 110px;
+  accent-color: var(--green);
+  cursor: pointer;
+}
+
 .hint {
   color: var(--grey);
   font-size: 0.9rem;

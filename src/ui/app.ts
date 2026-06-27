@@ -1,14 +1,14 @@
 import { redactRegion, type RedactionMode, type Region } from "../core/redact";
 import { normalizeRect, type Point } from "./geometry";
 import { hexToRgba } from "./color";
-
-const BLUR_BLOCK_SIZE = 12;
+import { blurBlockSize } from "./blur";
 
 interface Elements {
   canvas: HTMLCanvasElement;
   fileInput: HTMLInputElement;
   modeInputs: NodeListOf<HTMLInputElement>;
   solidColor: HTMLInputElement;
+  blurStrength: HTMLInputElement;
   undo: HTMLButtonElement;
   export: HTMLButtonElement;
   hint: HTMLElement;
@@ -120,8 +120,9 @@ export class RedactEditor {
 
   private currentMode(): RedactionMode {
     const checked = Array.from(this.el.modeInputs).find((input) => input.checked);
+    // Strength feeds the blur block size only; solid stays fully opaque.
     return checked?.value === "pixelate"
-      ? { type: "pixelate", blockSize: BLUR_BLOCK_SIZE }
+      ? { type: "pixelate", blockSize: blurBlockSize(Number(this.el.blurStrength.value)) }
       : { type: "solid", color: hexToRgba(this.el.solidColor.value) };
   }
 
