@@ -1,3 +1,5 @@
+import { insideEllipse } from "./ellipse";
+
 /**
  * A raster image as raw RGBA pixels. The browser's `ImageData` satisfies this
  * structurally, so the core stays pure and testable without a real canvas.
@@ -26,6 +28,11 @@ export type RedactionMode =
   | { type: "solid"; color?: RGBA }
   | { type: "pixelate"; blockSize?: number };
 
+export type Shape = "rectangle" | "ellipse";
+
+/** Whether the pixel at absolute (x, y) belongs to the redacted area. */
+type PixelMask = (x: number, y: number) => boolean;
+
 const DEFAULT_SOLID_COLOR: RGBA = { r: 0, g: 0, b: 0, a: 255 };
 const DEFAULT_BLOCK_SIZE = 16;
 
@@ -33,19 +40,39 @@ const DEFAULT_BLOCK_SIZE = 16;
  * Return a new image with `region` redacted according to `mode`.
  * The input image is never mutated.
  */
-export function redactRegion(image: RasterImage, region: Region, mode: RedactionMode): RasterImage {
+export function redactRegion(
+  image: RasterImage,
+  region: Region,
+  mode: RedactionMode,
+  shape: Shape = "rectangle",
+): RasterImage {
   const out = new Uint8ClampedArray(image.data);
+  const surface: Surface = { data: out, width: image.width };
   const clamped = clampRegion(region, image.width, image.height);
 
   if (clamped.width > 0 && clamped.height > 0) {
+    // The mask is defined by the user's full region, so an off-image ellipse
+    // keeps its true curve; iteration stays inside the clamped bounds.
+    const mask = shapeMask(shape, region);
     if (mode.type === "solid") {
-      fillSolid(out, image.width, clamped, mode.color ?? DEFAULT_SOLID_COLOR);
+      fillSolid(surface, clamped, mode.color ?? DEFAULT_SOLID_COLOR, mask);
     } else {
-      pixelate(out, image.width, clamped, mode.blockSize ?? DEFAULT_BLOCK_SIZE);
+      pixelate(surface, clamped, mode.blockSize ?? DEFAULT_BLOCK_SIZE, mask);
     }
   }
 
   return { data: out, width: image.width, height: image.height };
+}
+
+/** A writable RGBA raster: the pixel buffer paired with its row width. */
+interface Surface {
+  readonly data: Uint8ClampedArray;
+  readonly width: number;
+}
+
+/** Build the pixel mask for a shape: a rectangle covers everything; an ellipse is inscribed. */
+function shapeMask(shape: Shape, region: Region): PixelMask {
+  return shape === "ellipse" ? (x, y) => insideEllipse(region, x, y) : () => true;
 }
 
 /** Intersect the region with the image, so callers never read or write out of bounds. */
@@ -57,19 +84,20 @@ function clampRegion(region: Region, imageWidth: number, imageHeight: number): R
   return { x: xStart, y: yStart, width: xEnd - xStart, height: yEnd - yStart };
 }
 
-function fillSolid(data: Uint8ClampedArray, imageWidth: number, region: Region, color: RGBA): void {
+function fillSolid(surface: Surface, region: Region, color: RGBA, mask: PixelMask): void {
   for (let y = region.y; y < region.y + region.height; y++) {
     for (let x = region.x; x < region.x + region.width; x++) {
-      const i = (y * imageWidth + x) * 4;
-      data[i] = color.r;
-      data[i + 1] = color.g;
-      data[i + 2] = color.b;
-      data[i + 3] = color.a;
+      if (!mask(x, y)) continue;
+      const i = (y * surface.width + x) * 4;
+      surface.data[i] = color.r;
+      surface.data[i + 1] = color.g;
+      surface.data[i + 2] = color.b;
+      surface.data[i + 3] = color.a;
     }
   }
 }
 
-function pixelate(data: Uint8ClampedArray, imageWidth: number, region: Region, blockSize: number): void {
+function pixelate(surface: Surface, region: Region, blockSize: number, mask: PixelMask): void {
   const endX = region.x + region.width;
   const endY = region.y + region.height;
 
@@ -81,12 +109,12 @@ function pixelate(data: Uint8ClampedArray, imageWidth: number, region: Region, b
         width: Math.min(blockX + blockSize, endX) - blockX,
         height: Math.min(blockY + blockSize, endY) - blockY,
       };
-      fillSolid(data, imageWidth, block, averageBlock(data, imageWidth, block));
+      fillSolid(surface, block, averageBlock(surface, block), mask);
     }
   }
 }
 
-function averageBlock(data: Uint8ClampedArray, imageWidth: number, region: Region): RGBA {
+function averageBlock(surface: Surface, region: Region): RGBA {
   let r = 0;
   let g = 0;
   let b = 0;
@@ -95,11 +123,11 @@ function averageBlock(data: Uint8ClampedArray, imageWidth: number, region: Regio
 
   for (let y = region.y; y < region.y + region.height; y++) {
     for (let x = region.x; x < region.x + region.width; x++) {
-      const i = (y * imageWidth + x) * 4;
-      r += data[i];
-      g += data[i + 1];
-      b += data[i + 2];
-      a += data[i + 3];
+      const i = (y * surface.width + x) * 4;
+      r += surface.data[i];
+      g += surface.data[i + 1];
+      b += surface.data[i + 2];
+      a += surface.data[i + 3];
       count++;
     }
   }

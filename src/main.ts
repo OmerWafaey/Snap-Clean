@@ -10,6 +10,7 @@ new RedactEditor({
   canvas: requireElement<HTMLCanvasElement>("canvas"),
   fileInput: requireElement<HTMLInputElement>("file-input"),
   modeInputs: document.querySelectorAll<HTMLInputElement>('input[name="mode"]'),
+  shapeInputs: document.querySelectorAll<HTMLInputElement>('input[name="shape"]'),
   solidColor: requireElement<HTMLInputElement>("solid-color"),
   blurStrength: requireElement<HTMLInputElement>("blur-strength"),
   undo: requireElement<HTMLButtonElement>("undo"),
