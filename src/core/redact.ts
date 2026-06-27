@@ -31,7 +31,7 @@ export type RedactionMode =
 export type Shape = "rectangle" | "ellipse";
 
 /** Whether the pixel at absolute (x, y) belongs to the redacted area. */
-type PixelMask = (x: number, y: number) => boolean;
+export type PixelMask = (x: number, y: number) => boolean;
 
 const DEFAULT_SOLID_COLOR: RGBA = { r: 0, g: 0, b: 0, a: 255 };
 const DEFAULT_BLOCK_SIZE = 16;
@@ -53,7 +53,7 @@ export function redactRegion(
   if (clamped.width > 0 && clamped.height > 0) {
     // The mask is defined by the user's full region, so an off-image ellipse
     // keeps its true curve; iteration stays inside the clamped bounds.
-    const mask = shapeMask(shape, region);
+    const mask = shapeCoverage(shape, region);
     if (mode.type === "solid") {
       fillSolid(surface, clamped, mode.color ?? DEFAULT_SOLID_COLOR, mask);
     } else {
@@ -70,9 +70,16 @@ interface Surface {
   readonly width: number;
 }
 
-/** Build the pixel mask for a shape: a rectangle covers everything; an ellipse is inscribed. */
-function shapeMask(shape: Shape, region: Region): PixelMask {
-  return shape === "ellipse" ? (x, y) => insideEllipse(region, x, y) : () => true;
+/**
+ * The coverage predicate for a shape within `region`: which pixels get redacted.
+ * Self-bounding (false outside the region), so it doubles as the source for both
+ * the fill and the drag outline — keeping the previewed and redacted pixels identical.
+ */
+export function shapeCoverage(shape: Shape, region: Region): PixelMask {
+  if (shape === "ellipse") return (x, y) => insideEllipse(region, x, y);
+  const endX = region.x + region.width;
+  const endY = region.y + region.height;
+  return (x, y) => x >= region.x && x < endX && y >= region.y && y < endY;
 }
 
 /** Intersect the region with the image, so callers never read or write out of bounds. */

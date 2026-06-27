@@ -1,5 +1,6 @@
-import { redactRegion, type RedactionMode, type Region, type Shape } from "../core/redact";
+import { redactRegion, shapeCoverage, type RedactionMode, type Region, type Shape } from "../core/redact";
 import { normalizeRect, type Point } from "./geometry";
+import { maskEdges, type Edge } from "./outline";
 import { hexToRgba } from "./color";
 import { blurBlockSize } from "./blur";
 
@@ -70,8 +71,10 @@ export class RedactEditor {
   private onPointerMove(event: PointerEvent): void {
     if (!this.dragStart || !this.committed) return;
     this.previewRegion = this.regionFrom(this.dragStart, event);
-    // Preview the real redaction, so what you see is exactly what will be hidden.
-    this.ctx.putImageData(this.redactedImage(this.committed, this.previewRegion), 0, 0);
+    // Outline the exact pixels that will be redacted on release — see before fill.
+    this.ctx.putImageData(this.committed, 0, 0);
+    const covers = shapeCoverage(this.currentShape(), this.previewRegion);
+    this.drawOutline(maskEdges(this.previewRegion, covers));
   }
 
   private onPointerUp(): void {
@@ -106,15 +109,29 @@ export class RedactEditor {
   }
 
   /**
-   * Redact `region` into a fresh image using the current mode and shape. This is
-   * the single place pixels get hidden, so the drag preview and the committed
-   * result are produced identically — what you see is exactly what gets redacted.
+   * Redact `region` into a fresh image using the current mode and shape. The fill
+   * and the drag outline both read the same `shapeCoverage`, so the pixels the
+   * outline promised are exactly the pixels this hides.
    */
   private redactedImage(source: ImageData, region: Region): ImageData {
     const result = redactRegion(source, region, this.currentMode(), this.currentShape());
     const image = this.ctx.createImageData(result.width, result.height);
     image.data.set(result.data);
     return image;
+  }
+
+  /** Stroke the marching-ants outline of the exact pixels that will be redacted. */
+  private drawOutline(edges: Edge[]): void {
+    this.ctx.strokeStyle = "#25c97a";
+    this.ctx.lineWidth = 1;
+    this.ctx.setLineDash([4, 3]);
+    this.ctx.beginPath();
+    for (const edge of edges) {
+      this.ctx.moveTo(edge.x1, edge.y1);
+      this.ctx.lineTo(edge.x2, edge.y2);
+    }
+    this.ctx.stroke();
+    this.ctx.setLineDash([]);
   }
 
   private undo(): void {
