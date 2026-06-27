@@ -1,7 +1,11 @@
-import { redactRegion, shapeCoverage, type Region } from "../core/redact";
+import { redactMask, shapeCoverage, type PixelMask, type Region } from "../core/redact";
 import { normalizeRect, type Point } from "./geometry";
 import { maskEdges, type Edge } from "./outline";
+import { brushBounds, brushCoverage } from "./brush";
 import { captureSettings, type ControlValues, type DragSettings } from "./settings";
+
+/** Fixed brush radius in image pixels. A size control can be its own later slice. */
+const BRUSH_RADIUS = 12;
 
 interface Elements {
   canvas: HTMLCanvasElement;
@@ -26,7 +30,8 @@ export class RedactEditor {
   private readonly history: ImageData[] = [];
   private dragStart: Point | null = null;
   private previewRegion: Region | null = null;
-  // Mode + shape are locked in when the drag begins, so changing a control
+  private brushPath: Point[] = [];
+  // Mode + tool are locked in when the drag begins, so changing a control
   // mid-drag never alters what the in-progress selection will redact.
   private dragSettings: DragSettings | null = null;
 
@@ -68,40 +73,68 @@ export class RedactEditor {
     this.dragStart = this.toImageCoords(event);
     this.previewRegion = null;
     this.dragSettings = captureSettings(this.controlValues());
+    this.brushPath = this.dragSettings.shape === "brush" ? [this.dragStart] : [];
     this.el.canvas.setPointerCapture(event.pointerId);
   }
 
   private onPointerMove(event: PointerEvent): void {
     if (!this.dragStart || !this.committed || !this.dragSettings) return;
-    this.previewRegion = this.regionFrom(this.dragStart, event);
+    if (this.dragSettings.shape === "brush") {
+      this.brushPath.push(this.toImageCoords(event));
+    } else {
+      this.previewRegion = this.regionFrom(this.dragStart, event);
+    }
     // Outline the exact pixels that will be redacted on release — see before fill.
     this.ctx.putImageData(this.committed, 0, 0);
-    const covers = shapeCoverage(this.dragSettings.shape, this.previewRegion);
-    this.drawOutline(maskEdges(this.previewRegion, covers));
+    const stroke = this.currentStroke();
+    if (stroke) this.drawOutline(maskEdges(stroke.region, stroke.covers));
   }
 
   private onPointerUp(): void {
     if (!this.dragStart) return;
     this.dragStart = null;
 
-    // Commit the exact region the preview last showed — never recompute from the
+    // Commit the exact coverage the preview last showed — never recompute from the
     // release point, which can land a pixel past what was displayed.
-    const region = this.previewRegion;
+    const stroke = this.currentStroke();
     this.previewRegion = null;
-    if (!region || region.width < 1 || region.height < 1) {
+    this.brushPath = [];
+    if (!stroke) {
       this.restore(); // discard a stray click, repaint the committed image
       return;
     }
-    this.applyRegion(region);
+    this.applyStroke(stroke.region, stroke.covers);
   }
 
-  /** Redact the region permanently — committed regions are never edited again. */
-  private applyRegion(region: Region): void {
+  /**
+   * The region + coverage for the current drag, by tool. Preview and commit both
+   * read this one derivation, so the outline marks exactly what the fill hides.
+   * Returns null when there is nothing to redact yet (e.g. a stray click).
+   */
+  private currentStroke(): { region: Region; covers: PixelMask } | null {
+    const settings = this.dragSettings;
+    if (!settings) return null;
+
+    if (settings.shape === "brush") {
+      if (this.brushPath.length === 0) return null;
+      return {
+        region: brushBounds(this.brushPath, BRUSH_RADIUS),
+        covers: brushCoverage(this.brushPath, BRUSH_RADIUS),
+      };
+    }
+
+    const region = this.previewRegion;
+    if (!region || region.width < 1 || region.height < 1) return null;
+    return { region, covers: shapeCoverage(settings.shape, region) };
+  }
+
+  /** Redact the covered pixels permanently — committed pixels are never edited again. */
+  private applyStroke(region: Region, covers: PixelMask): void {
     const source = this.committed;
     if (!source) return;
 
     this.history.push(source);
-    this.committed = this.redactedImage(source, region);
+    this.committed = this.redactedImage(source, region, covers);
     this.restore();
     this.el.undo.disabled = false;
   }
@@ -112,14 +145,14 @@ export class RedactEditor {
   }
 
   /**
-   * Redact `region` into a fresh image using the current mode and shape. The fill
-   * and the drag outline both read the same `shapeCoverage`, so the pixels the
-   * outline promised are exactly the pixels this hides.
+   * Redact the pixels selected by `covers` (within `region`) into a fresh image
+   * using the captured mode. Every tool — shapes and the brush — fills through
+   * this one mask-based core, so the outline and the fill can never diverge.
    */
-  private redactedImage(source: ImageData, region: Region): ImageData {
+  private redactedImage(source: ImageData, region: Region, covers: PixelMask): ImageData {
     const settings = this.dragSettings;
     if (!settings) throw new Error("No drag settings captured for this redaction");
-    const result = redactRegion(source, region, settings.mode, settings.shape);
+    const result = redactMask(source, region, settings.mode, covers);
     const image = this.ctx.createImageData(result.width, result.height);
     image.data.set(result.data);
     return image;

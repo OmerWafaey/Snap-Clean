@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { redactRegion, type RasterImage, type Shape } from "./redact";
+import { redactRegion, redactMask, type RasterImage, type Shape } from "./redact";
 
 /** Build a solid-color test image so assertions read clearly. */
 function makeImage(width: number, height: number, fill: [number, number, number, number]): RasterImage {
@@ -191,6 +191,23 @@ describe("redactRegion - bounds", () => {
     expect(pixelAt(result, 0, 0)).toEqual([0, 0, 0, 255]);
     expect(pixelAt(result, 1, 1)).toEqual([0, 0, 0, 255]);
     expect(pixelAt(result, 2, 2)).toEqual([255, 255, 255, 255]);
+  });
+});
+
+describe("redactMask - arbitrary coverage (the free-hand brush path)", () => {
+  it("fully redacts every covered pixel and leaves uncovered pixels untouched", () => {
+    const image = makeImage(4, 4, [255, 255, 255, 255]); // all white
+    const region = { x: 0, y: 0, width: 4, height: 4 };
+    const onDiagonal = (x: number, y: number) => x === y; // an irregular, brush-like mask
+
+    const result = redactMask(image, region, { type: "solid", color: { r: 10, g: 20, b: 30, a: 255 } }, onDiagonal);
+
+    // covered -> chosen color, FULLY opaque (the redaction never goes translucent)
+    expect(pixelAt(result, 0, 0)).toEqual([10, 20, 30, 255]);
+    expect(pixelAt(result, 2, 2)).toEqual([10, 20, 30, 255]);
+    // uncovered -> original pixel, untouched
+    expect(pixelAt(result, 1, 0)).toEqual([255, 255, 255, 255]);
+    expect(pixelAt(result, 3, 0)).toEqual([255, 255, 255, 255]);
   });
 });
 

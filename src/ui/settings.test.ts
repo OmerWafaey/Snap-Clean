@@ -19,6 +19,7 @@ describe("captureSettings", () => {
   it.each([
     ["ellipse", "ellipse"],
     ["rectangle", "rectangle"],
+    ["brush", "brush"],
     ["", "rectangle"], // unknown/missing selection falls back to rectangle
   ])("captures shape %s as %s", (selected, expected) => {
     expect(captureSettings({ ...base, shape: selected }).shape).toBe(expected);

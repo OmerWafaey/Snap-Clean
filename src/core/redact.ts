@@ -46,14 +46,28 @@ export function redactRegion(
   mode: RedactionMode,
   shape: Shape = "rectangle",
 ): RasterImage {
+  // The mask is defined by the user's full region, so an off-image ellipse
+  // keeps its true curve; redactMask clamps iteration to the image bounds.
+  return redactMask(image, region, mode, shapeCoverage(shape, region));
+}
+
+/**
+ * Return a new image with the pixels selected by `mask` (within `region`)
+ * redacted according to `mode`. The mask is any coverage predicate — a shape,
+ * or a free-hand brush stroke — so every redaction path shares this one fill.
+ * The input image is never mutated.
+ */
+export function redactMask(
+  image: RasterImage,
+  region: Region,
+  mode: RedactionMode,
+  mask: PixelMask,
+): RasterImage {
   const out = new Uint8ClampedArray(image.data);
   const surface: Surface = { data: out, width: image.width };
   const clamped = clampRegion(region, image.width, image.height);
 
   if (clamped.width > 0 && clamped.height > 0) {
-    // The mask is defined by the user's full region, so an off-image ellipse
-    // keeps its true curve; iteration stays inside the clamped bounds.
-    const mask = shapeCoverage(shape, region);
     if (mode.type === "solid") {
       fillSolid(surface, clamped, mode.color ?? DEFAULT_SOLID_COLOR, mask);
     } else {
