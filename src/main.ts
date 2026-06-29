@@ -13,6 +13,7 @@ new RedactEditor({
   shapeInputs: document.querySelectorAll<HTMLInputElement>('input[name="shape"]'),
   solidColor: requireElement<HTMLInputElement>("solid-color"),
   blurStrength: requireElement<HTMLInputElement>("blur-strength"),
+  brushSize: requireElement<HTMLInputElement>("brush-size"),
   undo: requireElement<HTMLButtonElement>("undo"),
   export: requireElement<HTMLButtonElement>("export"),
   hint: requireElement<HTMLElement>("hint"),

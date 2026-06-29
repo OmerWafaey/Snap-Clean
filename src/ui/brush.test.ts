@@ -26,6 +26,15 @@ describe("brushCoverage", () => {
     expect(covers(13, 10)).toBe(true);
     expect(covers(14, 10)).toBe(false);
   });
+
+  it.each([2, 48])("keeps a hard edge at radius %d, so a thin or thick stroke never feathers", (radius) => {
+    const covers = brushCoverage([{ x: 100, y: 100 }], radius);
+
+    // the last pixel whose centre is within the radius is fully covered, and the
+    // very next one out is fully uncovered — a crisp boundary at any slider size
+    expect(covers(100 + radius - 1, 100)).toBe(true);
+    expect(covers(100 + radius, 100)).toBe(false);
+  });
 });
 
 describe("brushBounds", () => {

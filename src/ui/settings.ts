@@ -13,6 +13,7 @@ export type Tool = Shape | "brush";
 export interface DragSettings {
   mode: RedactionMode;
   shape: Tool;
+  radius: number;
 }
 
 /** The raw control values read off the DOM once, when the drag starts. */
@@ -21,10 +22,25 @@ export interface ControlValues {
   shape: string;
   color: string;
   strength: number;
+  size: number;
 }
 
 export function captureSettings(controls: ControlValues): DragSettings {
-  return { mode: toMode(controls), shape: toShape(controls.shape) };
+  return { mode: toMode(controls), shape: toShape(controls.shape), radius: brushRadius(controls.size) };
+}
+
+/**
+ * The brush radius in image pixels for a drag. Size only grows the covered area —
+ * never the redaction strength — so a thin and a thick stroke hide equally fully.
+ * A blank or out-of-range value falls back to the default rather than producing a
+ * thinner-than-allowed (or absurdly large) stroke; NaN fails both bounds checks.
+ */
+const MIN_RADIUS = 2;
+const MAX_RADIUS = 48;
+const DEFAULT_RADIUS = 12;
+
+export function brushRadius(size: number): number {
+  return size >= MIN_RADIUS && size <= MAX_RADIUS ? size : DEFAULT_RADIUS;
 }
 
 function toMode(controls: ControlValues): RedactionMode {

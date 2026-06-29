@@ -4,9 +4,6 @@ import { maskEdges, type Edge } from "./outline";
 import { brushBounds, brushCoverage } from "./brush";
 import { captureSettings, type ControlValues, type DragSettings } from "./settings";
 
-/** Fixed brush radius in image pixels. A size control can be its own later slice. */
-const BRUSH_RADIUS = 12;
-
 interface Elements {
   canvas: HTMLCanvasElement;
   fileInput: HTMLInputElement;
@@ -14,6 +11,7 @@ interface Elements {
   shapeInputs: NodeListOf<HTMLInputElement>;
   solidColor: HTMLInputElement;
   blurStrength: HTMLInputElement;
+  brushSize: HTMLInputElement;
   undo: HTMLButtonElement;
   export: HTMLButtonElement;
   hint: HTMLElement;
@@ -126,8 +124,8 @@ export class RedactEditor {
     if (settings.shape === "brush") {
       if (this.brushPath.length === 0) return null;
       return {
-        region: brushBounds(this.brushPath, BRUSH_RADIUS),
-        covers: brushCoverage(this.brushPath, BRUSH_RADIUS),
+        region: brushBounds(this.brushPath, settings.radius),
+        covers: brushCoverage(this.brushPath, settings.radius),
       };
     }
 
@@ -211,6 +209,7 @@ export class RedactEditor {
       shape: this.selectedValue(this.el.shapeInputs) ?? "",
       color: this.el.solidColor.value,
       strength: Number(this.el.blurStrength.value),
+      size: Number(this.el.brushSize.value),
     };
   }
 

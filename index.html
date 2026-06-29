@@ -35,6 +35,10 @@
           <label><input type="radio" name="shape" value="rectangle" checked /> Rectangle</label>
           <label><input type="radio" name="shape" value="ellipse" /> Circle</label>
           <label><input type="radio" name="shape" value="brush" /> Brush</label>
+          <label class="strength">
+            Brush size
+            <input id="brush-size" type="range" min="2" max="48" value="12" aria-label="Brush size" />
+          </label>
         </fieldset>
 
         <button id="undo" class="btn" type="button" disabled>Undo</button>
