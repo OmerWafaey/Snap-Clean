@@ -84,10 +84,18 @@ export class RedactEditor {
     } else {
       this.previewRegion = this.regionFrom(this.dragStart, event);
     }
-    // Outline the exact pixels that will be redacted on release — see before fill.
-    this.ctx.putImageData(this.committed, 0, 0);
     const stroke = this.currentStroke();
-    if (stroke) this.drawOutline(maskEdges(stroke.region, stroke.covers));
+    if (this.dragSettings.shape === "brush") {
+      // Live-paint: render the brush's real redaction fill as it's painted, always
+      // from the committed image — so committed pixels are untouched and the preview
+      // is exactly what release will commit (same stroke through redactedImage).
+      const preview = stroke ? this.redactedImage(this.committed, stroke.region, stroke.covers) : this.committed;
+      this.ctx.putImageData(preview, 0, 0);
+    } else {
+      // Shapes: outline the exact pixels that will be redacted on release — see before fill.
+      this.ctx.putImageData(this.committed, 0, 0);
+      if (stroke) this.drawOutline(maskEdges(stroke.region, stroke.covers));
+    }
   }
 
   private onPointerUp(): void {
