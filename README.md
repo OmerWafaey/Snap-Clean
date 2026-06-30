@@ -1,29 +1,38 @@
-# Snap Clean
+<p align="center">
+  <img src="Snap%20Clean.png" alt="Snap Clean" width="480" />
+</p>
 
-**Blur. Redact. Share with confidence.**
+<h1 align="center">Snap Clean</h1>
 
-Snap Clean is a fast, browser-based image redaction tool. Open an image, drag over
-anything you want to hide — faces, names, account numbers — and export a clean PNG.
-Everything happens locally in your browser; your images are never uploaded anywhere.
+<p align="center"><strong>Blur. Redact. Share with confidence.</strong> 🛡️</p>
 
-## Features
+---
 
-- **Solid redaction** — cover sensitive areas with an opaque, fully-hiding fill in any color.
-- **Blur / pixelate** — obscure regions with adjustable blur strength.
-- **Shapes** — rectangle, circle, or free-hand brush with adjustable brush size.
-- **Live preview** — see the redaction outline as you drag; it fills on release.
-- **Undo** — step back through redactions.
-- **Export PNG** — download the cleaned image.
+Ever wanted to share a screenshot but needed to hide a name, a face, or an account
+number first? **Snap Clean** makes that effortless. Open an image, drag over whatever
+you want to hide, and export a clean PNG — all in your browser, in seconds. ✨
 
-## Getting started
+Best of all: your images **never leave your device**. No uploads, no servers, no
+worries. 🔒
 
-Requires [Node.js](https://nodejs.org/).
+## ✨ What it does
+
+- 🖤 **Solid redaction** — cover anything sensitive with an opaque, fully-hiding fill in any color.
+- 🌫️ **Blur / pixelate** — soften regions with adjustable blur strength.
+- ⬛ **Flexible shapes** — rectangle, circle, or a free-hand brush with adjustable size.
+- 👀 **Live preview** — watch the outline as you drag; it fills in when you release.
+- ↩️ **Undo** — changed your mind? Step right back.
+- 💾 **Export PNG** — download your cleaned-up image with one click.
+
+## 🚀 Getting started
+
+You'll need [Node.js](https://nodejs.org/) installed.
 
 ```bash
-# install dependencies
+# grab the dependencies
 npm install
 
-# start the dev server
+# fire up the dev server
 npm run dev
 
 # build for production
@@ -33,19 +42,19 @@ npm run build
 npm run preview
 ```
 
-Then open the local URL printed by Vite (typically `http://localhost:5173`).
+Then open the local URL Vite prints (usually `http://localhost:5173`) and you're good to go!
 
-## Usage
+## 🎯 How to use it
 
-1. Click **Open image** and choose a photo or screenshot.
-2. Pick a **mode** (Solid or Blur) and a **shape** (Rectangle, Circle, or Brush).
-3. Drag across anything you want to hide.
-4. Use **Undo** to revert, then click **Export PNG** to save the cleaned image.
+1. Click **Open image** and pick a photo or screenshot.
+2. Choose a **mode** (Solid or Blur) and a **shape** (Rectangle, Circle, or Brush).
+3. Drag across anything you'd like to hide. 🖱️
+4. Hit **Undo** if you need a do-over, then **Export PNG** to save the result.
 
-## Development
+## 🛠️ Development
 
 ```bash
-# run the test suite
+# run the tests
 npm test
 
 # watch mode
@@ -55,10 +64,10 @@ npm run test:watch
 npm run typecheck
 ```
 
-The project is built with [TypeScript](https://www.typescriptlang.org/),
+Built with ❤️ using [TypeScript](https://www.typescriptlang.org/),
 [Vite](https://vitejs.dev/), and [Vitest](https://vitest.dev/).
 
-### Project structure
+### 📁 Project structure
 
 ```
 src/
@@ -69,11 +78,11 @@ src/
 index.html
 ```
 
-The core stays pure and testable: it operates on raw RGBA pixel data (structurally
-compatible with the browser's `ImageData`), so redaction logic can be unit-tested
-without a real canvas.
+The core stays pure and testable: it works on raw RGBA pixel data (structurally
+compatible with the browser's `ImageData`), so the redaction logic can be unit-tested
+without ever touching a real canvas.
 
-## Privacy
+## 🔒 Privacy first
 
-Snap Clean runs entirely in your browser. Images are processed locally and never
-leave your device.
+Snap Clean runs **entirely in your browser**. Your images are processed locally and
+never leave your device. Share with confidence. 💙
