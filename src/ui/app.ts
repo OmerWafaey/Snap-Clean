@@ -1,4 +1,5 @@
-import { redactMask, shapeCoverage, type PixelMask, type Region } from "../core/redact";
+import { redactMask, shapeCoverage, type PixelMask, type RasterImage, type Region } from "../core/redact";
+import { composite, pickTopmost, type Redaction } from "../core/scene";
 import { normalizeRect, type Point } from "./geometry";
 import { maskEdges, type Edge } from "./outline";
 import { brushBounds, brushCoverage } from "./brush";
@@ -17,15 +18,34 @@ interface Elements {
   hint: HTMLElement;
 }
 
+/** How an outline is stroked — distinct treatments keep "drawing" and "selected" apart. */
+interface StrokeStyle {
+  color: string;
+  dash: number[];
+  width: number;
+}
+
+/** The live drag preview: thin green marching ants. */
+const PREVIEW_STYLE: StrokeStyle = { color: "#25c97a", dash: [4, 3], width: 1 };
+/** The selected redaction: a thicker white dashed box, clearly distinct from the preview. */
+const SELECTION_STYLE: StrokeStyle = { color: "#ffffff", dash: [6, 4], width: 2 };
+
 /**
- * Drives the redaction canvas: load an image, drag to select an area, redact it
- * immediately and permanently, undo, and export. The drag preview and the commit
- * both go through the pure `redactRegion` core, so what you see is what gets hidden.
+ * Drives the redaction canvas. Redactions are kept as data — the pristine image
+ * plus an ordered list of {region, covers, mode} — and the canvas is rendered by
+ * compositing that list over the original. The original is held ONLY as the
+ * compositing source: it is never drawn on its own once anything is redacted, and
+ * export always outputs the composite, so hidden content can never leak out. The
+ * Select tool picks an existing redaction (highlight only — it reveals nothing).
  */
 export class RedactEditor {
   private readonly ctx: CanvasRenderingContext2D;
-  private committed: ImageData | null = null;
-  private readonly history: ImageData[] = [];
+  private original: ImageData | null = null;
+  private redactions: Redaction[] = [];
+  private selected: number | null = null;
+  // The cached composite of `original` + `redactions`: the base for previews and
+  // the only thing ever exported. Recomputed whenever the redaction list changes.
+  private scene: ImageData | null = null;
   private dragStart: Point | null = null;
   private previewRegion: Region | null = null;
   private brushPath: Point[] = [];
@@ -59,24 +79,36 @@ export class RedactEditor {
     this.ctx.drawImage(bitmap, 0, 0);
     bitmap.close();
 
-    this.history.length = 0;
-    this.committed = this.snapshot();
+    this.original = this.snapshot();
+    this.redactions = [];
+    this.selected = null;
+    this.recompose();
+    this.render();
     this.el.export.disabled = false;
     this.el.undo.disabled = true;
-    this.el.hint.textContent = "Drag across anything you want to hide. Switch between Solid and Blur as needed.";
+    this.el.hint.textContent = "Drag to hide anything. Pick Select to highlight an existing redaction.";
   }
 
   private onPointerDown(event: PointerEvent): void {
-    if (!this.committed) return;
+    if (!this.scene) return;
+
+    // Select tool: pick the redaction under the click instead of drawing a new one.
+    if (this.tool() === "select") {
+      this.selected = pickTopmost(this.redactions, this.toImageCoords(event));
+      this.render();
+      return;
+    }
+
     this.dragStart = this.toImageCoords(event);
     this.previewRegion = null;
+    this.selected = null; // drawing a new redaction clears any highlight
     this.dragSettings = captureSettings(this.controlValues());
     this.brushPath = this.dragSettings.shape === "brush" ? [this.dragStart] : [];
     this.el.canvas.setPointerCapture(event.pointerId);
   }
 
   private onPointerMove(event: PointerEvent): void {
-    if (!this.dragStart || !this.committed || !this.dragSettings) return;
+    if (!this.dragStart || !this.scene || !this.dragSettings) return;
     if (this.dragSettings.shape === "brush") {
       this.brushPath.push(this.toImageCoords(event));
     } else {
@@ -85,14 +117,14 @@ export class RedactEditor {
     const stroke = this.currentStroke();
     if (this.dragSettings.shape === "brush") {
       // Live-paint: render the brush's real redaction fill as it's painted, always
-      // from the committed image — so committed pixels are untouched and the preview
+      // from the current scene — so committed pixels are untouched and the preview
       // is exactly what release will commit (same stroke through redactedImage).
-      const preview = stroke ? this.redactedImage(this.committed, stroke.region, stroke.covers) : this.committed;
+      const preview = stroke ? this.redactedImage(this.scene, stroke.region, stroke.covers) : this.scene;
       this.ctx.putImageData(preview, 0, 0);
     } else {
       // Shapes: outline the exact pixels that will be redacted on release — see before fill.
-      this.ctx.putImageData(this.committed, 0, 0);
-      if (stroke) this.drawOutline(maskEdges(stroke.region, stroke.covers));
+      this.ctx.putImageData(this.scene, 0, 0);
+      if (stroke) this.strokeEdges(maskEdges(stroke.region, stroke.covers), PREVIEW_STYLE);
     }
   }
 
@@ -106,7 +138,7 @@ export class RedactEditor {
     this.previewRegion = null;
     this.brushPath = [];
     if (!stroke) {
-      this.restore(); // discard a stray click, repaint the committed image
+      this.render(); // discard a stray click, repaint the scene
       return;
     }
     this.applyStroke(stroke.region, stroke.covers);
@@ -134,15 +166,15 @@ export class RedactEditor {
     return { region, covers: shapeCoverage(settings.shape, region) };
   }
 
-  /** Redact the covered pixels permanently — committed pixels are never edited again. */
+  /** Record a new redaction as data and re-render. The original pixels are never destroyed. */
   private applyStroke(region: Region, covers: PixelMask): void {
-    const source = this.committed;
-    if (!source) return;
+    if (!this.dragSettings) return;
 
-    this.history.push(source);
-    this.committed = this.redactedImage(source, region, covers);
-    this.restore();
-    this.el.undo.disabled = false;
+    this.redactions.push({ region, covers, mode: this.dragSettings.mode });
+    this.selected = null;
+    this.recompose();
+    this.render();
+    this.el.undo.disabled = this.redactions.length === 0;
   }
 
   /** The selection rectangle for the current drag — one derivation shared by preview and commit. */
@@ -151,24 +183,21 @@ export class RedactEditor {
   }
 
   /**
-   * Redact the pixels selected by `covers` (within `region`) into a fresh image
-   * using the captured mode. Every tool — shapes and the brush — fills through
-   * this one mask-based core, so the outline and the fill can never diverge.
+   * Render the brush's covered pixels (within `region`) over `source` into a fresh
+   * image using the captured mode — the live brush preview. Goes through the same
+   * mask-based core as a committed redaction, so the preview and the fill agree.
    */
   private redactedImage(source: ImageData, region: Region, covers: PixelMask): ImageData {
     const settings = this.dragSettings;
     if (!settings) throw new Error("No drag settings captured for this redaction");
-    const result = redactMask(source, region, settings.mode, covers);
-    const image = this.ctx.createImageData(result.width, result.height);
-    image.data.set(result.data);
-    return image;
+    return this.toImageData(redactMask(source, region, settings.mode, covers));
   }
 
-  /** Stroke the marching-ants outline of the exact pixels that will be redacted. */
-  private drawOutline(edges: Edge[]): void {
-    this.ctx.strokeStyle = "#25c97a";
-    this.ctx.lineWidth = 1;
-    this.ctx.setLineDash([4, 3]);
+  /** Stroke a marching-ants outline of unit edges in the given style. */
+  private strokeEdges(edges: Edge[], style: StrokeStyle): void {
+    this.ctx.strokeStyle = style.color;
+    this.ctx.lineWidth = style.width;
+    this.ctx.setLineDash(style.dash);
     this.ctx.beginPath();
     for (const edge of edges) {
       this.ctx.moveTo(edge.x1, edge.y1);
@@ -179,15 +208,20 @@ export class RedactEditor {
   }
 
   private undo(): void {
-    const previous = this.history.pop();
-    if (!previous) return;
-    this.committed = previous;
-    this.restore();
-    this.el.undo.disabled = this.history.length === 0;
+    if (this.redactions.length === 0) return;
+    this.redactions.pop();
+    this.selected = null;
+    this.recompose();
+    this.render();
+    this.el.undo.disabled = this.redactions.length === 0;
   }
 
   private exportPng(): void {
+    // Export the redacted composite only — never the original, never the selection
+    // highlight. Paint the clean scene, capture it, then restore the on-screen highlight.
+    this.paintScene();
     this.el.canvas.toBlob((blob) => {
+      this.render();
       if (!blob) return;
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -198,6 +232,28 @@ export class RedactEditor {
     }, "image/png");
   }
 
+  /** Recompute the cached composite from the original + current redaction list. */
+  private recompose(): void {
+    if (this.original) this.scene = this.toImageData(composite(this.original, this.redactions));
+  }
+
+  /** Paint the redacted composite — the base layer, with no selection highlight. */
+  private paintScene(): void {
+    if (this.scene) this.ctx.putImageData(this.scene, 0, 0);
+  }
+
+  /** Paint the composite, then outline the selected redaction (display only). */
+  private render(): void {
+    this.paintScene();
+    if (this.selected === null) return;
+    const target = this.redactions[this.selected];
+    this.strokeEdges(maskEdges(target.region, target.covers), SELECTION_STYLE);
+  }
+
+  private tool(): string {
+    return this.selectedValue(this.el.shapeInputs) ?? "";
+  }
+
   private selectedValue(inputs: NodeListOf<HTMLInputElement>): string | undefined {
     return Array.from(inputs).find((input) => input.checked)?.value;
   }
@@ -206,7 +262,7 @@ export class RedactEditor {
   private controlValues(): ControlValues {
     return {
       mode: this.selectedValue(this.el.modeInputs) ?? "",
-      shape: this.selectedValue(this.el.shapeInputs) ?? "",
+      shape: this.tool(),
       color: this.el.solidColor.value,
       strength: Number(this.el.blurStrength.value),
       size: Number(this.el.brushSize.value),
@@ -227,7 +283,10 @@ export class RedactEditor {
     return this.ctx.getImageData(0, 0, this.el.canvas.width, this.el.canvas.height);
   }
 
-  private restore(): void {
-    if (this.committed) this.ctx.putImageData(this.committed, 0, 0);
+  /** Copy a core raster result into a canvas-ready ImageData buffer. */
+  private toImageData(raster: RasterImage): ImageData {
+    const image = this.ctx.createImageData(raster.width, raster.height);
+    image.data.set(raster.data);
+    return image;
   }
 }
