@@ -38,6 +38,16 @@ export function pickTopmost(redactions: Redaction[], point: { x: number; y: numb
   return null;
 }
 
+/**
+ * The scene with the redaction at `index` removed, as a new list — the input is
+ * never mutated and every other redaction is kept in its original order (and thus
+ * its stacking order). Deleting re-exposes only what that one redaction hid;
+ * nothing else changes, so undo can restore it exactly by keeping the old list.
+ */
+export function removeRedaction(redactions: Redaction[], index: number): Redaction[] {
+  return redactions.filter((_, i) => i !== index);
+}
+
 /** A defensive copy of the original, so an empty scene still returns a fresh buffer. */
 function copy(image: RasterImage): RasterImage {
   return { data: new Uint8ClampedArray(image.data), width: image.width, height: image.height };

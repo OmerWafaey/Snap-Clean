@@ -1,5 +1,5 @@
 import { redactMask, shapeCoverage, type PixelMask, type RasterImage, type Region } from "../core/redact";
-import { composite, pickTopmost, type Redaction } from "../core/scene";
+import { composite, pickTopmost, removeRedaction, type Redaction } from "../core/scene";
 import { normalizeRect, type Point } from "./geometry";
 import { maskEdges, type Edge } from "./outline";
 import { brushBounds, brushCoverage } from "./brush";
@@ -13,6 +13,7 @@ interface Elements {
   solidColor: HTMLInputElement;
   blurStrength: HTMLInputElement;
   brushSize: HTMLInputElement;
+  delete: HTMLButtonElement;
   undo: HTMLButtonElement;
   export: HTMLButtonElement;
   hint: HTMLElement;
@@ -42,6 +43,9 @@ export class RedactEditor {
   private readonly ctx: CanvasRenderingContext2D;
   private original: ImageData | null = null;
   private redactions: Redaction[] = [];
+  // Snapshots of the redaction list before each change (draw or delete), so undo
+  // can restore the exact prior state — including a deleted region at its z-order.
+  private history: Redaction[][] = [];
   private selected: number | null = null;
   // The cached composite of `original` + `redactions`: the base for previews and
   // the only thing ever exported. Recomputed whenever the redaction list changes.
@@ -62,11 +66,13 @@ export class RedactEditor {
 
   private bindEvents(): void {
     this.el.fileInput.addEventListener("change", () => this.onFileChosen());
+    this.el.delete.addEventListener("click", () => this.deleteSelected());
     this.el.undo.addEventListener("click", () => this.undo());
     this.el.export.addEventListener("click", () => this.exportPng());
     this.el.canvas.addEventListener("pointerdown", (e) => this.onPointerDown(e));
     this.el.canvas.addEventListener("pointermove", (e) => this.onPointerMove(e));
     this.el.canvas.addEventListener("pointerup", () => this.onPointerUp());
+    window.addEventListener("keydown", (e) => this.onKeyDown(e));
   }
 
   private async onFileChosen(): Promise<void> {
@@ -81,12 +87,13 @@ export class RedactEditor {
 
     this.original = this.snapshot();
     this.redactions = [];
-    this.selected = null;
+    this.history = [];
+    this.setSelected(null);
     this.recompose();
     this.render();
     this.el.export.disabled = false;
     this.el.undo.disabled = true;
-    this.el.hint.textContent = "Drag to hide anything. Pick Select to highlight an existing redaction.";
+    this.el.hint.textContent = "Drag to hide anything. Pick Select to highlight a redaction, then Delete to remove it.";
   }
 
   private onPointerDown(event: PointerEvent): void {
@@ -94,14 +101,14 @@ export class RedactEditor {
 
     // Select tool: pick the redaction under the click instead of drawing a new one.
     if (this.tool() === "select") {
-      this.selected = pickTopmost(this.redactions, this.toImageCoords(event));
+      this.setSelected(pickTopmost(this.redactions, this.toImageCoords(event)));
       this.render();
       return;
     }
 
     this.dragStart = this.toImageCoords(event);
     this.previewRegion = null;
-    this.selected = null; // drawing a new redaction clears any highlight
+    this.setSelected(null); // drawing a new redaction clears any highlight
     this.dragSettings = captureSettings(this.controlValues());
     this.brushPath = this.dragSettings.shape === "brush" ? [this.dragStart] : [];
     this.el.canvas.setPointerCapture(event.pointerId);
@@ -169,12 +176,31 @@ export class RedactEditor {
   /** Record a new redaction as data and re-render. The original pixels are never destroyed. */
   private applyStroke(region: Region, covers: PixelMask): void {
     if (!this.dragSettings) return;
+    this.commit([...this.redactions, { region, covers, mode: this.dragSettings.mode }]);
+  }
 
-    this.redactions.push({ region, covers, mode: this.dragSettings.mode });
-    this.selected = null;
+  /**
+   * Delete the selected redaction, re-exposing what it hid. Only the selected
+   * region is removed — every other redaction is untouched — and undo restores it.
+   * A no-op when nothing is selected.
+   */
+  private deleteSelected(): void {
+    if (this.selected === null) return;
+    this.commit(removeRedaction(this.redactions, this.selected));
+  }
+
+  /**
+   * Swap in a new redaction list, snapshotting the old one for undo. Every change
+   * (draw or delete) goes through here, so undo reverses each of them the same way
+   * and always restores the exact prior state. Clears the selection after the change.
+   */
+  private commit(next: Redaction[]): void {
+    this.history.push(this.redactions);
+    this.redactions = next;
+    this.setSelected(null);
     this.recompose();
     this.render();
-    this.el.undo.disabled = this.redactions.length === 0;
+    this.el.undo.disabled = this.history.length === 0;
   }
 
   /** The selection rectangle for the current drag — one derivation shared by preview and commit. */
@@ -208,12 +234,13 @@ export class RedactEditor {
   }
 
   private undo(): void {
-    if (this.redactions.length === 0) return;
-    this.redactions.pop();
-    this.selected = null;
+    const previous = this.history.pop();
+    if (!previous) return;
+    this.redactions = previous;
+    this.setSelected(null);
     this.recompose();
     this.render();
-    this.el.undo.disabled = this.redactions.length === 0;
+    this.el.undo.disabled = this.history.length === 0;
   }
 
   private exportPng(): void {
@@ -248,6 +275,20 @@ export class RedactEditor {
     if (this.selected === null) return;
     const target = this.redactions[this.selected];
     this.strokeEdges(maskEdges(target.region, target.covers), SELECTION_STYLE);
+  }
+
+  /** Set the selected redaction (or none) and keep the Delete button in sync. */
+  private setSelected(index: number | null): void {
+    this.selected = index;
+    this.el.delete.disabled = index === null;
+  }
+
+  /** Delete / Backspace removes the selected redaction — only while one is selected. */
+  private onKeyDown(event: KeyboardEvent): void {
+    if (event.key !== "Delete" && event.key !== "Backspace") return;
+    if (this.selected === null) return;
+    event.preventDefault(); // don't let Backspace navigate the page back
+    this.deleteSelected();
   }
 
   private tool(): string {

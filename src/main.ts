@@ -14,6 +14,7 @@ new RedactEditor({
   solidColor: requireElement<HTMLInputElement>("solid-color"),
   blurStrength: requireElement<HTMLInputElement>("blur-strength"),
   brushSize: requireElement<HTMLInputElement>("brush-size"),
+  delete: requireElement<HTMLButtonElement>("delete"),
   undo: requireElement<HTMLButtonElement>("undo"),
   export: requireElement<HTMLButtonElement>("export"),
   hint: requireElement<HTMLElement>("hint"),

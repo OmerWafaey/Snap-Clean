@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { composite, pickTopmost, type Redaction } from "./scene";
+import { composite, pickTopmost, removeRedaction, type Redaction } from "./scene";
 import { shapeCoverage, type RasterImage } from "./redact";
 
 /** Build a solid-color test image so assertions read clearly. */
@@ -113,5 +113,37 @@ describe("pickTopmost - selecting an existing redaction", () => {
 
     // (0,0) is outside the ellipse's coverage but inside the lower rectangle -> picks the rectangle.
     expect(pickTopmost(scene, { x: 0, y: 0 })).toBe(0);
+  });
+});
+
+describe("removeRedaction - deleting a selected region", () => {
+  it("returns a new list without the chosen redaction, keeping the others in order", () => {
+    const a = blackRect({ x: 0, y: 0, width: 2, height: 2 });
+    const b = blackRect({ x: 2, y: 2, width: 2, height: 2 });
+    const c = blackRect({ x: 4, y: 4, width: 2, height: 2 });
+    const scene = [a, b, c];
+
+    const result = removeRedaction(scene, 1); // delete the middle one
+
+    expect(result).toEqual([a, c]); // b gone, a and c kept in their original order
+    expect(scene).toEqual([a, b, c]); // input list is never mutated
+  });
+
+  it("re-exposes the deleted region's pixels while the others stay fully hidden", () => {
+    const original = makeImage(6, 4, [255, 255, 255, 255]); // white
+    const left = blackRect({ x: 0, y: 0, width: 2, height: 4 }); // hides column 0..1
+    const right = blackRect({ x: 4, y: 0, width: 2, height: 4 }); // hides column 4..5
+    const scene = [left, right];
+
+    // Sanity: with both present, both areas are hidden.
+    const before = composite(original, scene);
+    expect(pixelAt(before, 0, 0)).toEqual([0, 0, 0, 255]);
+    expect(pixelAt(before, 5, 0)).toEqual([0, 0, 0, 255]);
+
+    // Delete the left redaction -> its pixels come back, the right stays hidden.
+    const after = composite(original, removeRedaction(scene, 0));
+    expect(pixelAt(after, 0, 0)).toEqual([255, 255, 255, 255]); // re-exposed (intended)
+    expect(pixelAt(after, 1, 3)).toEqual([255, 255, 255, 255]);
+    expect(pixelAt(after, 5, 0)).toEqual([0, 0, 0, 255]); // the other redaction is untouched
   });
 });
